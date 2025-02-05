@@ -52,25 +52,55 @@
 #     )
 
 
-from fastapi import FastAPI, WebSocket
-import cv2
-import numpy as np
+
+
+# from fastapi import FastAPI, WebSocket
+# import base64
+
+# app = FastAPI()
+
+# latest_frame = None  # Store the latest frame
+
+# @app.websocket("/ws")
+# async def websocket_endpoint(websocket: WebSocket):
+#     global latest_frame
+#     await websocket.accept()
+#     print("WebSocket connection established!")
+#     try:
+#         while True:
+#             frame_data = await websocket.receive_text()  # Receive base64 frame
+#             latest_frame = base64.b64decode(frame_data)  # Decode to bytes
+#     except Exception as e:
+#         print("WebSocket error:", e)
+#     finally:
+#         await websocket.close()
+
+# @app.get("/latest_frame")
+# async def get_latest_frame():
+#     if latest_frame is None:
+#         return {"error": "No frame received yet"}
+    
+#     return {"frame": base64.b64encode(latest_frame).decode('utf-8')}
+
+
+from fastapi import FastAPI, WebSocket, Response
 import base64
 
 app = FastAPI()
 
-# Store the latest frame for clients to fetch
-latest_frame = None
+latest_frame = None  # Store the latest frame
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
+    """ Receives frames from ESP32 over WebSocket """
     global latest_frame
     await websocket.accept()
-    print("ESP32 connected via WebSocket")
+    print("WebSocket connection established!")
+
     try:
         while True:
-            frame_data = await websocket.receive_text()  # Receive base64 encoded image
-            latest_frame = base64.b64decode(frame_data)  # Decode to bytes
+            frame_data = await websocket.receive_text()  # Receive frame as Base64
+            latest_frame = base64.b64decode(frame_data)  # Decode frame
     except Exception as e:
         print("WebSocket connection closed:", e)
     finally:
@@ -78,10 +108,8 @@ async def websocket_endpoint(websocket: WebSocket):
 
 @app.get("/latest_frame")
 async def get_latest_frame():
-    """
-    API to fetch the latest frame in JPEG format
-    """
+    """ Returns the latest frame as an image response """
     if latest_frame is None:
         return {"error": "No frame received yet"}
     
-    return {"frame": base64.b64encode(latest_frame).decode('utf-8')}
+    return Response(content=latest_frame, media_type="image/jpeg")
