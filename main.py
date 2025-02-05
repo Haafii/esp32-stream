@@ -1,52 +1,87 @@
-import asyncio
-import threading
+# import asyncio
+# import threading
 
-from fastapi import FastAPI, File, UploadFile
-from fastapi.responses import StreamingResponse
+# from fastapi import FastAPI, File, UploadFile
+# from fastapi.responses import StreamingResponse
+
+# app = FastAPI()
+
+# # Global variable to hold the latest frame (in memory)
+# latest_frame = None
+
+# # A lock to ensure thread-safe access to the frame
+# frame_lock = threading.Lock()
+
+
+# @app.post("/upload_frame")
+# async def upload_frame(file: UploadFile = File(...)):
+#     """
+#     Endpoint for the ESP32 to upload a single frame.
+#     Expects the frame as an image (e.g. JPEG).
+#     """
+#     global latest_frame
+#     # Read the uploaded file contents
+#     content = await file.read()
+#     # Update the global frame safely using the lock
+#     with frame_lock:
+#         latest_frame = content
+#     return {"status": "frame received"}
+
+
+# @app.get("/video_feed")
+# async def video_feed():
+#     """
+#     Endpoint that streams the video feed (MJPEG) to the client.
+#     It repeatedly sends the latest available frame.
+#     """
+#     async def frame_generator():
+#         global latest_frame
+#         while True:
+#             # Sleep briefly to avoid a tight loop
+#             await asyncio.sleep(0.05)
+#             with frame_lock:
+#                 frame = latest_frame
+#             if frame:
+#                 yield (
+#                     b"--frame\r\n"
+#                     b"Content-Type: image/jpeg\r\n\r\n" + frame + b"\r\n"
+#                 )
+#     return StreamingResponse(
+#         frame_generator(),
+#         media_type="multipart/x-mixed-replace; boundary=frame"
+#     )
+
+
+from fastapi import FastAPI, WebSocket
+import cv2
+import numpy as np
+import base64
 
 app = FastAPI()
 
-# Global variable to hold the latest frame (in memory)
+# Store the latest frame for clients to fetch
 latest_frame = None
 
-# A lock to ensure thread-safe access to the frame
-frame_lock = threading.Lock()
-
-
-@app.post("/upload_frame")
-async def upload_frame(file: UploadFile = File(...)):
-    """
-    Endpoint for the ESP32 to upload a single frame.
-    Expects the frame as an image (e.g. JPEG).
-    """
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
     global latest_frame
-    # Read the uploaded file contents
-    content = await file.read()
-    # Update the global frame safely using the lock
-    with frame_lock:
-        latest_frame = content
-    return {"status": "frame received"}
-
-
-@app.get("/video_feed")
-async def video_feed():
-    """
-    Endpoint that streams the video feed (MJPEG) to the client.
-    It repeatedly sends the latest available frame.
-    """
-    async def frame_generator():
-        global latest_frame
+    await websocket.accept()
+    print("ESP32 connected via WebSocket")
+    try:
         while True:
-            # Sleep briefly to avoid a tight loop
-            await asyncio.sleep(0.05)
-            with frame_lock:
-                frame = latest_frame
-            if frame:
-                yield (
-                    b"--frame\r\n"
-                    b"Content-Type: image/jpeg\r\n\r\n" + frame + b"\r\n"
-                )
-    return StreamingResponse(
-        frame_generator(),
-        media_type="multipart/x-mixed-replace; boundary=frame"
-    )
+            frame_data = await websocket.receive_text()  # Receive base64 encoded image
+            latest_frame = base64.b64decode(frame_data)  # Decode to bytes
+    except Exception as e:
+        print("WebSocket connection closed:", e)
+    finally:
+        await websocket.close()
+
+@app.get("/latest_frame")
+async def get_latest_frame():
+    """
+    API to fetch the latest frame in JPEG format
+    """
+    if latest_frame is None:
+        return {"error": "No frame received yet"}
+    
+    return {"frame": base64.b64encode(latest_frame).decode('utf-8')}
